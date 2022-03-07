@@ -71,7 +71,7 @@ router.post('/', (req, res) => {
 
 // update product
 router.put('/:id', (req, res) => {
-  // update product data
+  // update product data 
   Product.update(req.body, {
     where: {
       id: req.params.id,
@@ -81,30 +81,36 @@ router.put('/:id', (req, res) => {
       // find all associated tags from ProductTag
       return ProductTag.findAll({ where: { product_id: req.params.id } });
     })
-    .then((productTags) => {
+    .then(async (productTags) => {
       // get list of current tag_ids
-      const productTagIds = productTags.map(({ tag_id }) => tag_id);
-      // create filtered list of new tag_ids
-      // I DON'T GET THIS PART!
-      const newProductTags = req.body.tagIds
-        .filter((tag_id) => !productTagIds.includes(tag_id))
-        .map((tag_id) => {
-          return {
-            product_id: req.params.id,
-            tag_id,
-          };
-        });
-      // figure out which ones to remove
-      const productTagsToRemove = productTags
-        .filter(({ tag_id }) => !req.body.tagIds.includes(tag_id))
-        .map(({ id }) => id);
+            
+      const wantedTagIds = req.body.tagIds;
 
-      // run both actions
-      return Promise.all([
-        ProductTag.destroy({ where: { id: productTagsToRemove } }),
-        ProductTag.bulkCreate(newProductTags),
-      ]);
+      //[3]
+
+      // [1,3,4]
+      // [2,3,5] -- new tag ids to associate to the currect product
+
+      // sync
+      // 1. find out what is overllaping between new and old tag ids
+      const overlappedProductTags = productTags.filter(existed => wantedTagIds.includes(existed.tag_id));
+
+      // 2. clear the unwated tags
+      const unwantedProductTags = productTags.filter(existed => !wantedTagIds.includes(existed.tag_id));
+      const unwantedProductTagIds = unwantedProductTags.map(productTag => productTag.id);
+      await ProductTag.destroy({where: {id: unwantedProductTagIds}});
+
+      // 3. associated the new tags
+      const newTagIds = wantedTagIds.filter(wanted => !overlappedProductTags.includes(wanted));
+      const payload = newTagIds.map((tag_id) => {
+        return {
+          product_id: req.params.id,
+          tag_id,
+        }
+      })
+      return await ProductTag.bulkCreate(payload)
     })
+
     .then((updatedProductTags) => res.json(updatedProductTags))
     .catch((err) => {
       // console.log(err);
